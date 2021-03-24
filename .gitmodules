@@ -1,0 +1,6 @@
+[submodule "sol/chainlink"]
+	path = sol/chainlink
+	url = https://github.com/smartcontractkit/chainlink.git
+[submodule "sol/openzeppelin-contracts"]
+	path = sol/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts.git
