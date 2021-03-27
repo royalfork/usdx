@@ -14,7 +14,7 @@ contract MockOracle is AggregatorV3Interface {
 
 	RoundData private lastRound;
 
-	uint8 public override decimals;
+	uint8 public override immutable decimals;
 	uint256 public override version;
 	string public override description;
 	bool public accessDenied;
@@ -27,9 +27,6 @@ contract MockOracle is AggregatorV3Interface {
 	// test against that.  ALSO, test against changes to make sure
 	// math is ok.
 	// TODO in tests, use theoretical and live data.
-	function setDecimals (uint8 _decimals) public {
-		decimals = _decimals;
-	}
 
 	function setLastRound(
 		uint80 _roundId,
@@ -45,7 +42,7 @@ contract MockOracle is AggregatorV3Interface {
 		lastRound.answeredInRound = _answeredInRound;
 	}
 
-	// What do all the params actually mean?
+	
 	function latestRoundData()
 		public
 		view
@@ -53,11 +50,11 @@ contract MockOracle is AggregatorV3Interface {
 		override
 		checkAccess()
 		returns (
-			uint80 roundId,
-			int256 answer,
-			uint256 startedAt,
-			uint256 updatedAt,
-			uint80 answeredInRound
+			uint80 roundId, // id of current price feed round
+			int256 answer, // latest trusted price
+			uint256 startedAt, // start time of current round
+			uint256 updatedAt, // end time of current round
+			uint80 answeredInRound // round the answer was fetched in (varies due to heartbeat or staying within .5% deviation threshold)
 		)
 	{
 		return (lastRound.roundId,
@@ -87,5 +84,7 @@ contract MockOracle is AggregatorV3Interface {
 		_;
 	}
 
-	constructor () public { }
+	constructor () public { 
+		decimals = 8;
+	}
 }

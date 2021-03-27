@@ -106,25 +106,6 @@ func TestUsdx(t *testing.T) {
 		}
 	})
 
-	t.Run("feedDecimalsTooLarge", func(t *testing.T) {
-		if !chain.Succeed(oracleContract.SetDecimals(accts[0].Auth, 65)) {
-			t.Fatalf("unable to set oracle decs: decs=%v", 65)
-		}
-
-		accts[1].Auth.Value = big.NewInt(100)
-		if chain.Succeed((&USDXRaw{contract}).Transfer(accts[1].Auth)) {
-			t.Error("shouldn't mint when decs is too large")
-		}
-
-		if !chain.Succeed(oracleContract.SetDecimals(accts[0].Auth, 64)) {
-			t.Fatalf("unable to set oracle decs: decs=%v", 64)
-		}
-
-		if !chain.Succeed((&USDXRaw{contract}).Transfer(accts[1].Auth)) {
-			t.Error("should mint when decs is 64")
-		}
-	})
-
 	t.Run("feedRevertsOnMint", func(t *testing.T) {
 		if !chain.Succeed(oracleContract.SetAccess(accts[0].Auth, false)) {
 			t.Fatal("unable to set oracle access")
@@ -171,14 +152,7 @@ func TestUsdx(t *testing.T) {
 			58973604819000,
 		}
 
-		var rateDecs = []uint8{
-			0,
-			1,
-			6,
-			8, // normal
-			12,
-			18,
-		}
+		var rateDec = uint8(8)
 
 		txEvts := make(chan *USDXTransfer, 1)
 		txSub, err := contract.USDXFilterer.WatchTransfer(nil, txEvts, nil, nil)
@@ -209,33 +183,26 @@ func TestUsdx(t *testing.T) {
 
 		zero := new(big.Int)
 		for _, rate := range rates {
-			for _, rateDec := range rateDecs {
-				for _, payment := range payments {
-					// set rate in oracle
-					if !chain.Succeed(oracleContract.SetLastRound(accts[0].Auth, zero, big.NewInt(rate), zero, zero, zero)) {
-						t.Fatalf("unable to set oracle round: rate=%v", rate)
-					}
+			for _, payment := range payments {
+				// set rate in oracle
+				if !chain.Succeed(oracleContract.SetLastRound(accts[0].Auth, zero, big.NewInt(rate), zero, zero, zero)) {
+					t.Fatalf("unable to set oracle round: rate=%v", rate)
+				}
 
-					// set rateDec in oracle
-					if !chain.Succeed(oracleContract.SetDecimals(accts[0].Auth, rateDec)) {
-						t.Fatalf("unable to set oracle decs: decs=%v", rateDec)
-					}
+				accts[1].Auth.Value = payment
+				if !chain.Succeed((&USDXRaw{contract}).Transfer(accts[1].Auth)) {
+					t.Fatal("unable to transfer")
+				}
 
-					accts[1].Auth.Value = payment
-					if !chain.Succeed((&USDXRaw{contract}).Transfer(accts[1].Auth)) {
-						t.Fatal("unable to transfer")
-					}
-
-					to, amt, err := transferEvt()
-					if err != nil {
-						t.Error(err)
-					}
-					if to != accts[1].Addr {
-						t.Errorf("want transfer addr: %v, got: %v", accts[1], to)
-					}
-					if expAmt := expAmount(rate, rateDec, payment); amt.Cmp(expAmt) != 0 {
-						t.Errorf("rate=%d, rateDec=%d, payment=%v. want amount: %v, got: %v", rate, rateDec, payment, expAmt, amt)
-					}
+				to, amt, err := transferEvt()
+				if err != nil {
+					t.Error(err)
+				}
+				if to != accts[1].Addr {
+					t.Errorf("want transfer addr: %v, got: %v", accts[1], to)
+				}
+				if expAmt := expAmount(rate, rateDec, payment); amt.Cmp(expAmt) != 0 {
+					t.Errorf("rate=%d, rateDec=%d, payment=%v. want amount: %v, got: %v", rate, rateDec, payment, expAmt, amt)
 				}
 			}
 		}
@@ -244,8 +211,7 @@ func TestUsdx(t *testing.T) {
 	t.Run("erc20Transfer", func(t *testing.T) {
 		var (
 			to, from = accts[2], accts[3]
-			dec      = uint8(6)                                                   // rate contains 6 decimals
-			rate     = big.NewInt(1_000_000_000)                                  // 1,000 usd = 1 eth
+			rate     = big.NewInt(100_000_000_000)                                // 1,000 usd = 1 eth
 			send     = new(big.Int).Mul(big.NewInt(10), big.NewInt(params.Ether)) // send 10 eth
 			expBal   = big.NewInt(10_000)                                         // expect 10,000 usdx
 
@@ -255,10 +221,6 @@ func TestUsdx(t *testing.T) {
 		// set rate in oracle
 		if !chain.Succeed(oracleContract.SetLastRound(accts[0].Auth, zero, rate, zero, zero, zero)) {
 			t.Fatalf("unable to set oracle round: rate=%v", rate)
-		}
-
-		if !chain.Succeed(oracleContract.SetDecimals(accts[0].Auth, dec)) {
-			t.Fatalf("unable to set oracle decs: decs=%v", dec)
 		}
 
 		to.Auth.Value = send
