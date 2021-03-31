@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.2;
 
-import "./chainlink/evm-contracts/src/v0.6/interfaces/AggregatorV3Interface.sol";
+import "./chainlink/evm-contracts/src/v0.7/interfaces/AggregatorV3Interface.sol";
 
 contract MockOracle is AggregatorV3Interface {
 	struct RoundData {
