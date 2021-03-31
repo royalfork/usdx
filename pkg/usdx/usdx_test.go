@@ -82,22 +82,37 @@ func TestUsdx(t *testing.T) {
 		}
 	})
 
-	t.Run("ownerReplacesFeed", func(t *testing.T) {
+	newOracleAddr, _, _, err := DeployMockOracle(accts[0].Auth, chain)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("feedDecimalsMatch", func(t *testing.T) {
+
 		newOracle := common.Address{0xff}
 
-		if chain.Succeed(contract.SetFeed(accts[1].Auth, newOracle)) {
+		if chain.Succeed(contract.SetFeed(accts[0].Auth, newOracle)) {
+			t.Fatal("feed with incorrect decimals (!= 8) should not be set")
+		}
+
+	})
+
+	t.Run("ownerReplacesFeed", func(t *testing.T) {
+
+		if chain.Succeed(contract.SetFeed(accts[1].Auth, newOracleAddr)) {
 			t.Fatal("non-owner shouldn't replace feed")
 		}
 
 		// owner can change
-		if !chain.Succeed(contract.SetFeed(accts[0].Auth, newOracle)) {
+		if !chain.Succeed(contract.SetFeed(accts[0].Auth, newOracleAddr)) {
 			t.Error("owner should setFeed")
 		}
 
 		if feed, err := contract.EthUsdPriceFeed(&bind.CallOpts{}); err != nil {
 			t.Fatal("unable to get feed")
-		} else if feed != newOracle {
-			t.Errorf("want feed: %s, got: %s", newOracle, feed)
+		} else if feed != newOracleAddr {
+			t.Errorf("want feed: %s, got: %s", newOracleAddr, feed)
 		}
 
 		// owner changes feed back
