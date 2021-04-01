@@ -26,7 +26,7 @@ import "./openzeppelin-contracts/contracts/utils/math/SafeCast.sol";
 contract USDX is ERC20, Ownable {
 	using SafeMath for uint256;
 	using SafeCast for int256;
-
+	uint8 constant FEED_DECS = 8;
 	// ETH/USD exchange rate feed.
 	AggregatorV3Interface public ethUsdPriceFeed;
 
@@ -35,16 +35,14 @@ contract USDX is ERC20, Ownable {
 	}
 
 	function setFeed(address _newFeed) public onlyOwner {
-		ethUsdPriceFeed = AggregatorV3Interface(_newFeed);
+		AggregatorV3Interface newFeed = AggregatorV3Interface(_newFeed);
+		require(newFeed.decimals() == FEED_DECS);
+		ethUsdPriceFeed = newFeed;
 	}
 
 	receive() external payable {
-		uint256 decs = ethUsdPriceFeed.decimals();
-		// 10**64 < 2**213; safely stored in uint256.
-		require(decs <= 64, "feed decimals too large");
-
 		(,int256 rate,,,) = ethUsdPriceFeed.latestRoundData();
-		uint256 usd = msg.value.mul(rate.toUint256()).div(10**decs);
+		uint256 usd = msg.value.mul(rate.toUint256()).div(10**FEED_DECS); //latestRoundData uses 8 decimals
 		_mint(_msgSender(), usd);
 	}
 }

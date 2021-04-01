@@ -27,10 +27,6 @@ func TestMockOracle(t *testing.T) {
 		updatedTime = big.NewInt(1606332547)
 	)
 
-	if !chain.Succeed(contract.SetDecimals(accts[0].Auth, decimals)) {
-		t.Fatal("unable to set decimals")
-	}
-
 	if !chain.Succeed(contract.SetLastRound(accts[0].Auth, zero, rate, zero, updatedTime, zero)) {
 		t.Fatal("unable to set last round data")
 	}
