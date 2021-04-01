@@ -42,7 +42,7 @@ contract USDX is ERC20, Ownable {
 
 	receive() external payable {
 		(,int256 rate,,,) = ethUsdPriceFeed.latestRoundData();
-		uint256 usd = msg.value.mul(rate.toUint256()).div(10**8); //latestRoundData uses 8 decimals
+		uint256 usd = msg.value.mul(rate.toUint256()).div(10**FEED_DECS); //latestRoundData uses 8 decimals
 		_mint(_msgSender(), usd);
 	}
 }
