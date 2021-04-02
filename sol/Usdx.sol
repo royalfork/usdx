@@ -58,21 +58,38 @@ contract USDX is ERC20, Ownable {
 	receive() external payable {
 		(,int256 rate,,,) = ethUsdPriceFeed.latestRoundData();
 		uint256 toMint = weiToUSDX(msg.value, rate);
-		account storage acct = accounts[_msgSender()];
+		account storage acct = accounts[msg.sender];
 		acct.locked += msg.value;
 		acct.mint += toMint;
-		_mint(_msgSender(), toMint);
+		_mint(msg.sender, toMint);
 	}
 
 
-	// Converts USDX back into eth.
-	/* TODO: return usdx burned? */
-	function redeem() public {
-		/* TODO:  */
+	// Redeems USDX back into eth.  Amount of eth received is based on
+	function redeem(uint256 _amount) public returns (uint256) {
+		account storage acct = accounts[msg.sender];
+		require(acct.locked != 0, "nothing to redeem");
+		if (_amount == 0) {
+			_amount = acct.mint;
+		} else {
+			_amount = _amount < acct.mint ? _amount : acct.mint;
+		}
+
+		_burn(msg.sender, _amount);
+
+		uint256 unlock = acct.locked.mul(_amount).div(acct.mint);
+		if (_amount == acct.mint) {
+			delete accounts[msg.sender];
+		} else {
+			acct.mint -= _amount;
+			acct.locked -= unlock;
+		}
+		payable(msg.sender).transfer(unlock);
+		return _amount;
 	}
 
 	function collectAppreciation(uint256 _limit) public returns (uint256) {
-		account storage acct = accounts[_msgSender()];
+		account storage acct = accounts[msg.sender];
 		(bool ok, uint256 appr) = acctAppreciation(acct);
 		if (!ok) {
 			return 0;
@@ -81,18 +98,15 @@ contract USDX is ERC20, Ownable {
 			appr = _limit < appr ? _limit : appr;
 		}
 		acct.mint += appr;
-		_mint(_msgSender(), appr);
+		_mint(msg.sender, appr);
 		return appr;
 	}
 
 	function appreciation() public view returns (uint256) {
-		account storage acct = accounts[_msgSender()];
+		account storage acct = accounts[msg.sender];
 		(, uint256 appr) = acctAppreciation(acct);
 		return appr;
 	}
-
-	/* TODO: Is this needed?  Or better to just rely on accounts' public methods? */
-	/* function basis() public; */
 
 	function acctAppreciation(account storage acct) private view returns (bool, uint256) {
 		(,int256 rate,,,) = ethUsdPriceFeed.latestRoundData();
