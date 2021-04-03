@@ -46,8 +46,6 @@ func TestReceive(t *testing.T) {
 	}
 	chain.Commit()
 
-	// TODO: Listen for mint events
-
 	t.Run("latestRoundReverts", func(t *testing.T) {
 		if !chain.Succeed(oracleContract.SetAccess(accts[0].Auth, false)) {
 			t.Fatal("unable to set oracle access")
@@ -133,7 +131,6 @@ func TestReceive(t *testing.T) {
 }
 
 func TestRedeem(t *testing.T) {
-	// deploy
 	chain, accts := soltest.New()
 
 	oracleAddr, _, oracleContract, err := DeployMockOracle(accts[0].Auth, chain)
@@ -152,36 +149,41 @@ func TestRedeem(t *testing.T) {
 	}
 	chain.Commit()
 
-	t.Run("insufficientUSDXBalance", func(t *testing.T) {
-	})
+	// Set rate to 1000usd/eth
+	if !chain.Succeed(oracleContract.SetLastRound(accts[0].Auth, zero, big.NewInt(1000e8), zero, zero, zero)) {
+		t.Fatal("unable to set oracle round")
+	}
 
-	t.Run("limitExceedsBalance", func(t *testing.T) {
-	})
-
-	t.Run("limit", func(t *testing.T) {
-	})
-
-	t.Run("all", func(t *testing.T) {
-		if !chain.Succeed(oracleContract.SetLastRound(accts[0].Auth, zero, big.NewInt(1000e8), zero, zero, zero)) {
-			t.Fatal("unable to set oracle round")
-		}
-		accts[1].Auth.Value = big.NewInt(params.Ether)
-		if !chain.Succeed((&USDXRaw{contract}).Transfer(accts[1].Auth)) {
+	setup := func(t *testing.T, acct soltest.TestAccount) (curBal *big.Int, cleanup func()) {
+		acct.Auth.Value = big.NewInt(params.Ether)
+		if !chain.Succeed((&USDXRaw{contract}).Transfer(acct.Auth)) {
 			t.Fatal("unable to transfer")
 		}
-		accts[1].Auth.Value = nil
+		acct.Auth.Value = nil
 
 		// ensure balance is 1000usdx
-		if bal, err := contract.BalanceOf(&bind.CallOpts{}, accts[1].Addr); err != nil {
+		if bal, err := contract.BalanceOf(&bind.CallOpts{}, acct.Addr); err != nil {
 			t.Fatal(err)
 		} else if want := new(big.Int).Mul(big.NewInt(1000), big.NewInt(1e18)); bal.Cmp(want) != 0 {
 			t.Fatalf("want bal: %v, got: %v", want, bal)
 		}
 
-		oldBal, err := chain.BalanceAt(context.Background(), accts[1].Addr, nil)
+		curBal, err := chain.BalanceAt(context.Background(), acct.Addr, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
+
+		return curBal, func() {
+			// redeem full balance
+			if !chain.Succeed(contract.Redeem(acct.Auth, zero)) {
+				t.Fatal("unable to redeem full balance")
+			}
+		}
+	}
+
+	// limit == 0
+	t.Run("all", func(t *testing.T) {
+		oldBal, _ := setup(t, accts[1])
 
 		if !chain.Succeed(contract.Redeem(accts[1].Auth, zero)) {
 			t.Fatal("unable to redeem")
@@ -199,15 +201,138 @@ func TestRedeem(t *testing.T) {
 		} else if uBal.Uint64() != 0 {
 			t.Fatal("want 0 balance of usdx after full redeem")
 		}
+
+		if chain.Succeed(contract.Redeem(accts[1].Auth, zero)) {
+			t.Fatal("redeem with 0 balance should revert")
+		}
 	})
 
+	// limit < acct.mint
+	t.Run("limit", func(t *testing.T) {
+		oldBal, done := setup(t, accts[1])
+		defer done()
+
+		// redeem 500usdx
+		if !chain.Succeed(contract.Redeem(accts[1].Auth, new(big.Int).Mul(big.NewInt(500), big.NewInt(1e18)))) {
+			t.Fatal("unable to redeem")
+		}
+
+		if newBal, err := chain.BalanceAt(context.Background(), accts[1].Addr, nil); err != nil {
+			t.Fatal(err)
+		} else if want := oldBal.Add(oldBal, big.NewInt(5e17)); want.Cmp(newBal) != 0 {
+			t.Fatalf("want new bal: %v, got: %v", want, newBal)
+		}
+
+		// Ensure still has 500usdx
+		if uBal, err := contract.BalanceOf(&bind.CallOpts{}, accts[1].Addr); err != nil {
+			t.Fatal(err)
+		} else if want := new(big.Int).Mul(big.NewInt(500), big.NewInt(1e18)); uBal.Cmp(want) != 0 {
+			t.Fatalf("want usdx balance: %v, got: %v", want, uBal)
+		}
+	})
+
+	// limit > acct.mint
+	t.Run("limitExceedsMint", func(t *testing.T) {
+		oldBal, _ := setup(t, accts[1])
+
+		// redeem 5000usdx
+		if !chain.Succeed(contract.Redeem(accts[1].Auth, new(big.Int).Mul(big.NewInt(5000), big.NewInt(1e18)))) {
+			t.Fatal("unable to redeem")
+		}
+
+		if newBal, err := chain.BalanceAt(context.Background(), accts[1].Addr, nil); err != nil {
+			t.Fatal(err)
+		} else if want := oldBal.Add(oldBal, big.NewInt(params.Ether)); want.Cmp(newBal) != 0 {
+			t.Fatalf("want new bal: %v, got: %v", want, newBal)
+		}
+
+		// Ensure no more USDX balance
+		if uBal, err := contract.BalanceOf(&bind.CallOpts{}, accts[1].Addr); err != nil {
+			t.Fatal(err)
+		} else if uBal.Uint64() != 0 {
+			t.Fatal("want 0 balance of usdx after full redeem")
+		}
+	})
+
+	// usdx bal < acct.mint
+	t.Run("lowUSDXBal", func(t *testing.T) {
+		oldBal, cleanup := setup(t, accts[1])
+
+		// transfer 200usdx to another account
+		if !chain.Succeed(contract.Transfer(accts[1].Auth, accts[2].Addr, new(big.Int).Mul(big.NewInt(200), big.NewInt(1e18)))) {
+			t.Fatal("unable to transfer")
+		}
+
+		// redeem with no limit
+		if !chain.Succeed(contract.Redeem(accts[1].Auth, zero)) {
+			t.Fatal("unable to redeem")
+		}
+
+		// only get .8eth back
+		if newBal, err := chain.BalanceAt(context.Background(), accts[1].Addr, nil); err != nil {
+			t.Fatal(err)
+		} else if want := oldBal.Add(oldBal, big.NewInt(8e17)); want.Cmp(newBal) != 0 {
+			t.Fatalf("want new bal: %v, got: %v", want, newBal)
+		}
+
+		// redeeming should fail, no usdx balance
+		if chain.Succeed(contract.Redeem(accts[1].Auth, zero)) {
+			t.Fatal("redeeming with no usdx balance should fail")
+		}
+
+		// transfer 200usdx back, and cleanup
+		if !chain.Succeed(contract.Transfer(accts[2].Auth, accts[1].Addr, new(big.Int).Mul(big.NewInt(200), big.NewInt(1e18)))) {
+			t.Fatal("unable to transfer")
+		}
+		cleanup()
+	})
+
+	// usdx bal > acct.mint
 	t.Run("balExceedsMint", func(t *testing.T) {
-		// if user's usdx balance is more than the amount they mint, redemption should leave balance difference
+		oldBal, _ := setup(t, accts[1])
+		_, cleanup := setup(t, accts[2])
+		defer cleanup()
+
+		// transfer 200usdx to accts2
+		if !chain.Succeed(contract.Transfer(accts[2].Auth, accts[1].Addr, new(big.Int).Mul(big.NewInt(200), big.NewInt(1e18)))) {
+			t.Fatal("unable to transfer")
+		}
+
+		// redeem with no limit
+		if !chain.Succeed(contract.Redeem(accts[1].Auth, zero)) {
+			t.Fatal("unable to redeem")
+		}
+
+		// get full eth back
+		if newBal, err := chain.BalanceAt(context.Background(), accts[1].Addr, nil); err != nil {
+			t.Fatal(err)
+		} else if want := oldBal.Add(oldBal, big.NewInt(params.Ether)); want.Cmp(newBal) != 0 {
+			t.Fatalf("want new bal: %v, got: %v", want, newBal)
+		}
+
+		// Ensure still has 200usdx
+		if uBal, err := contract.BalanceOf(&bind.CallOpts{}, accts[1].Addr); err != nil {
+			t.Fatal(err)
+		} else if want := new(big.Int).Mul(big.NewInt(200), big.NewInt(1e18)); uBal.Cmp(want) != 0 {
+			t.Fatalf("want usdx balance: %v, got: %v", want, uBal)
+		}
+
+		if chain.Succeed(contract.Redeem(accts[1].Auth, zero)) {
+			t.Fatal("redeem with no locked eth should revert")
+		}
+
+		if !chain.Succeed(contract.Transfer(accts[1].Auth, accts[2].Addr, new(big.Int).Mul(big.NewInt(200), big.NewInt(1e18)))) {
+			t.Fatal("unable to transfer usdx back to acct2")
+		}
 	})
 
-	// TODO:
-	// ensure partial redemption works (what happens to "receive" after redemption?)
-	// what happens to fractional remainder?
+	// mint, redeem, mint, redeem suceeds
+	t.Run("doubleRedeem", func(t *testing.T) {
+		_, redeem := setup(t, accts[1])
+		redeem()
+		_, redeem = setup(t, accts[1])
+		redeem()
+	})
 }
 
 func TestAppreciation(t *testing.T) {

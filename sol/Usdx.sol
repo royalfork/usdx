@@ -68,13 +68,15 @@ contract USDX is ERC20, Ownable {
 	// Redeems USDX back into eth.  Amount of eth received is based on
 	function redeem(uint256 _amount) public returns (uint256) {
 		account storage acct = accounts[msg.sender];
-		require(acct.locked != 0, "nothing to redeem");
+		require(acct.locked > 0, "nothing to redeem");
 		if (_amount == 0) {
 			_amount = acct.mint;
 		} else {
-			_amount = _amount < acct.mint ? _amount : acct.mint;
+			_amount = min(_amount, acct.mint);
 		}
 
+		_amount = min(_amount, balanceOf(msg.sender));
+		require(_amount > 0, "no usdx balance");
 		_burn(msg.sender, _amount);
 
 		uint256 unlock = acct.locked.mul(_amount).div(acct.mint);
@@ -95,7 +97,7 @@ contract USDX is ERC20, Ownable {
 			return 0;
 		}
 		if (_limit > 0) {
-			appr = _limit < appr ? _limit : appr;
+			appr = min(_limit, appr);
 		}
 		acct.mint += appr;
 		_mint(msg.sender, appr);
@@ -116,5 +118,9 @@ contract USDX is ERC20, Ownable {
 
 	function weiToUSDX(uint256 _wei, int256 _rate) private view returns (uint256) {
 		return _wei.mul(_rate.toUint256()).div(10**FEED_DECS);
+	}
+
+	function min(uint256 a, uint256 b) internal pure returns (uint256) {
+		return a < b ? a : b;
 	}
 }
