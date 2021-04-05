@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/royalfork/soltest"
 )
@@ -576,9 +577,63 @@ func TestAppreciation(t *testing.T) {
 }
 
 func TestSetFeed(t *testing.T) {
-	// TODO:
-	// ensure only owner
-	// ensure revert if decimals don't match up
+	chain, accts := soltest.New()
+
+	oracleAddr, _, _, err := DeployMockOracle(accts[0].Auth, chain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain.Commit()
+
+	_, _, contract, err := DeployUSDX(accts[0].Auth, chain, oracleAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain.Commit()
+
+	t.Run("constructorSetsPriceFeed", func(t *testing.T) {
+		priceFeed, err := contract.EthUsdPriceFeed(&bind.CallOpts{})
+		if err != nil {
+			t.Errorf("uexpected err reading ethUsdPriceFeed: %v", err)
+		}
+		if priceFeed != oracleAddr {
+			t.Errorf("want ethUsdPriceFeed: %v, got: %v", oracleAddr, priceFeed)
+		}
+	})
+
+	t.Run("feedDecimalsIncorrect", func(t *testing.T) {
+		if chain.Succeed(contract.SetFeed(accts[0].Auth, common.Address{0xff})) {
+			t.Error("owner shouldn't set invalid feed")
+		}
+	})
+
+	t.Run("ownerReplacesFeed", func(t *testing.T) {
+		newOracle, _, _, err := DeployMockOracle(accts[0].Auth, chain)
+		if err != nil {
+			t.Fatal(err)
+		}
+		chain.Commit()
+
+		if chain.Succeed(contract.SetFeed(accts[1].Auth, newOracle)) {
+			t.Fatal("non-owner shouldn't replace feed")
+		}
+
+		// owner can change
+		if !chain.Succeed(contract.SetFeed(accts[0].Auth, newOracle)) {
+			t.Error("owner should setFeed")
+		}
+
+		if feed, err := contract.EthUsdPriceFeed(&bind.CallOpts{}); err != nil {
+			t.Fatal("unable to get feed")
+		} else if feed != newOracle {
+			t.Errorf("want feed: %s, got: %s", newOracle, feed)
+		}
+
+		// owner changes feed back
+		if !chain.Succeed(contract.SetFeed(accts[0].Auth, oracleAddr)) {
+			t.Fatal("owner should setFeed")
+		}
+	})
 }
 
 func TestTransferAcct(t *testing.T) {
