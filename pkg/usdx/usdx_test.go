@@ -35,10 +35,6 @@ func TestReceive(t *testing.T) {
 	}
 	chain.Commit()
 
-	if !chain.Succeed(oracleContract.SetDecimals(accts[0].Auth, 8)) {
-		t.Fatal("unable to set oracle decs")
-	}
-
 	contractAddr, _, contract, err := DeployUSDX(accts[0].Auth, chain, oracleAddr)
 	if err != nil {
 		t.Fatal(err)
@@ -53,6 +49,11 @@ func TestReceive(t *testing.T) {
 		accts[1].Auth.Value = big.NewInt(100)
 		if chain.Succeed((&USDXRaw{contract}).Transfer(accts[1].Auth)) {
 			t.Error("shouldn't mint when feed reverts")
+		}
+		accts[1].Auth.Value = nil
+
+		if !chain.Succeed(oracleContract.SetAccess(accts[0].Auth, true)) {
+			t.Fatal("unable to set oracle access")
 		}
 	})
 
@@ -131,10 +132,6 @@ func TestRedeem(t *testing.T) {
 		t.Fatal(err)
 	}
 	chain.Commit()
-
-	if !chain.Succeed(oracleContract.SetDecimals(accts[0].Auth, 8)) {
-		t.Fatal("unable to set oracle decs")
-	}
 
 	_, _, contract, err := DeployUSDX(accts[0].Auth, chain, oracleAddr)
 	if err != nil {
@@ -336,10 +333,6 @@ func TestAppreciation(t *testing.T) {
 		t.Fatal(err)
 	}
 	chain.Commit()
-
-	if !chain.Succeed(oracleContract.SetDecimals(accts[0].Auth, 8)) {
-		t.Fatal("unable to set oracle decs")
-	}
 
 	_, _, contract, err := DeployUSDX(accts[0].Auth, chain, oracleAddr)
 	if err != nil {

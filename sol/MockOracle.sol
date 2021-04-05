@@ -23,11 +23,6 @@ contract MockOracle is AggregatorV3Interface {
 		accessDenied = !_granted;
 	}
 
-	// TODO figure out what decimals is for live ETH/USD oracle, and
-	// test against that.  ALSO, test against changes to make sure
-	// math is ok.
-	// TODO in tests, use theoretical and live data.
-
 	function setLastRound(
 		uint80 _roundId,
 		int256 _answer,
@@ -42,7 +37,6 @@ contract MockOracle is AggregatorV3Interface {
 		lastRound.answeredInRound = _answeredInRound;
 	}
 
-	
 	function latestRoundData()
 		public
 		view
@@ -84,7 +78,7 @@ contract MockOracle is AggregatorV3Interface {
 		_;
 	}
 
-	constructor () public { 
+	constructor () public {
 		decimals = 8;
 	}
 }
