@@ -3,6 +3,7 @@ package usdx
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"math/big"
 	"math/rand"
@@ -14,17 +15,15 @@ import (
 	"github.com/royalfork/soltest"
 )
 
-var zero = new(big.Int)
+var (
+	zero = new(big.Int)
+	rate = big.NewInt(1e8)
+	eth  = big.NewInt(1e18)
+	usdx = big.NewInt(1e18)
+)
 
-func TestSetFeed(t *testing.T) {
-	// TODO:
-	// ensure only owner
-	// ensure revert if decimals don't match up
-}
-
-func TestTransferAcct(t *testing.T) {
-	// TODO:
-	// ensure only acct owner can transfer
+func bigint(val int64, decs *big.Int) *big.Int {
+	return new(big.Int).Mul(big.NewInt(val), decs)
 }
 
 func TestReceive(t *testing.T) {
@@ -59,7 +58,6 @@ func TestReceive(t *testing.T) {
 
 	// Randomly mint usdx, ensure balances always add up.
 	t.Run("mint", func(t *testing.T) {
-		// rand.Seed(time.Now().UnixNano())
 		r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 		feedDecs := big.NewInt(1e8)
@@ -122,11 +120,6 @@ func TestReceive(t *testing.T) {
 		if contractBal, _ := chain.BalanceAt(context.Background(), contractAddr, nil); totalPay.Cmp(contractBal) != 0 {
 			t.Errorf("want contract balance: %v, got: %v", totalPay, contractBal)
 		}
-	})
-
-	// is it possible for the division in weiToUSDX to truncate? What are implications of this?
-	// TODO:
-	t.Run("fractionalMint", func(t *testing.T) {
 	})
 }
 
@@ -336,12 +329,268 @@ func TestRedeem(t *testing.T) {
 }
 
 func TestAppreciation(t *testing.T) {
+	chain, accts := soltest.New()
+
+	oracleAddr, _, oracleContract, err := DeployMockOracle(accts[0].Auth, chain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain.Commit()
+
+	if !chain.Succeed(oracleContract.SetDecimals(accts[0].Auth, 8)) {
+		t.Fatal("unable to set oracle decs")
+	}
+
+	_, _, contract, err := DeployUSDX(accts[0].Auth, chain, oracleAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain.Commit()
+
+	t.Run("doubleCollect", func(t *testing.T) {
+		// rate starts at 100usd/eth
+		if !chain.Succeed(oracleContract.SetLastRound(accts[0].Auth, zero, big.NewInt(100e8), zero, zero, zero)) {
+			t.Fatal("unable to set oracle round")
+		}
+
+		// mint 100 usdx
+		accts[0].Auth.Value = big.NewInt(params.Ether)
+		if !chain.Succeed((&USDXRaw{contract}).Transfer(accts[0].Auth)) {
+			t.Fatal("unable to transfer")
+		}
+		accts[0].Auth.Value = nil
+
+		// rate increased to 150 usd/eth
+		if !chain.Succeed(oracleContract.SetLastRound(accts[0].Auth, zero, big.NewInt(150e8), zero, zero, zero)) {
+			t.Fatal("unable to set oracle round")
+		}
+
+		// collect 50 usdx
+		oldBal, err := contract.BalanceOf(&bind.CallOpts{}, accts[0].Addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !chain.Succeed(contract.CollectAppreciation(accts[0].Auth, zero)) {
+			t.Fatal("unable to collect appreciation")
+		}
+
+		if newBal, err := contract.BalanceOf(&bind.CallOpts{}, accts[0].Addr); err != nil {
+			t.Fatal(err)
+		} else if want := oldBal.Add(oldBal, bigint(50, usdx)); newBal.Cmp(want) != 0 {
+			t.Fatalf("want usdx balance: %v, got: %v", want, newBal)
+		}
+
+		// rate drops to 120, can't collect anything
+		if !chain.Succeed(oracleContract.SetLastRound(accts[0].Auth, zero, big.NewInt(100e8), zero, zero, zero)) {
+			t.Fatal("unable to set oracle round")
+		}
+
+		if appr, err := contract.Appreciation(&bind.CallOpts{}, accts[0].Addr); err != nil {
+			t.Fatal(err)
+		} else if appr.Cmp(zero) != 0 {
+			t.Fatalf("want appreciation: %v, got: %v", zero, appr)
+		}
+
+		// collect again @ 200
+		if !chain.Succeed(oracleContract.SetLastRound(accts[0].Auth, zero, big.NewInt(200e8), zero, zero, zero)) {
+			t.Fatal("unable to set oracle round")
+		}
+
+		if !chain.Succeed(contract.CollectAppreciation(accts[0].Auth, zero)) {
+			t.Fatal("unable to collect appreciation")
+		}
+
+		if newBal, err := contract.BalanceOf(&bind.CallOpts{}, accts[0].Addr); err != nil {
+			t.Fatal(err)
+		} else if want := oldBal.Add(oldBal, bigint(50, usdx)); newBal.Cmp(want) != 0 {
+			t.Fatalf("want usdx balance: %v, got: %v", want, newBal)
+		}
+
+		// rate increases to 250, can collect 50
+		if !chain.Succeed(oracleContract.SetLastRound(accts[0].Auth, zero, big.NewInt(250e8), zero, zero, zero)) {
+			t.Fatal("unable to set oracle round")
+		}
+		if appr, err := contract.Appreciation(&bind.CallOpts{}, accts[0].Addr); err != nil {
+			t.Fatal(err)
+		} else if want := bigint(50, usdx); appr.Cmp(want) != 0 {
+			t.Fatalf("want appreciation: %v, got: %v", want, appr)
+		}
+
+		// rate increases to 300, can collect 100
+		if !chain.Succeed(oracleContract.SetLastRound(accts[0].Auth, zero, big.NewInt(300e8), zero, zero, zero)) {
+			t.Fatal("unable to set oracle round")
+		}
+		if appr, err := contract.Appreciation(&bind.CallOpts{}, accts[0].Addr); err != nil {
+			t.Fatal(err)
+		} else if want := bigint(100, usdx); appr.Cmp(want) != 0 {
+			t.Fatalf("want appreciation: %v, got: %v", want, appr)
+		}
+
+		// redeem everything to reset
+		if !chain.Succeed(contract.Redeem(accts[0].Auth, zero)) {
+			t.Fatal("unable to redeem")
+		}
+	})
+
+	t.Run("limitOverAppr", func(t *testing.T) {
+		// rate starts at 100usd/eth
+		if !chain.Succeed(oracleContract.SetLastRound(accts[0].Auth, zero, big.NewInt(100e8), zero, zero, zero)) {
+			t.Fatal("unable to set oracle round")
+		}
+
+		// mint 100 usdx
+		accts[0].Auth.Value = big.NewInt(params.Ether)
+		if !chain.Succeed((&USDXRaw{contract}).Transfer(accts[0].Auth)) {
+			t.Fatal("unable to transfer")
+		}
+		accts[0].Auth.Value = nil
+
+		// rate increased to 150 usd/eth
+		if !chain.Succeed(oracleContract.SetLastRound(accts[0].Auth, zero, big.NewInt(150e8), zero, zero, zero)) {
+			t.Fatal("unable to set oracle round")
+		}
+
+		oldBal, err := contract.BalanceOf(&bind.CallOpts{}, accts[0].Addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !chain.Succeed(contract.CollectAppreciation(accts[0].Auth, bigint(100, usdx))) {
+			t.Fatal("unable to collect appreciation")
+		}
+
+		if newBal, err := contract.BalanceOf(&bind.CallOpts{}, accts[0].Addr); err != nil {
+			t.Fatal(err)
+		} else if want := oldBal.Add(oldBal, bigint(50, usdx)); newBal.Cmp(want) != 0 {
+			t.Fatalf("want usdx balance: %v, got: %v", want, newBal)
+		}
+
+		// redeem everything to reset
+		if !chain.Succeed(contract.Redeem(accts[0].Auth, zero)) {
+			t.Fatal("unable to redeem")
+		}
+	})
+
+	t.Run("limitUnderAppr", func(t *testing.T) {
+		// rate starts at 100usd/eth
+		if !chain.Succeed(oracleContract.SetLastRound(accts[0].Auth, zero, big.NewInt(100e8), zero, zero, zero)) {
+			t.Fatal("unable to set oracle round")
+		}
+
+		// mint 100 usdx
+		accts[0].Auth.Value = big.NewInt(params.Ether)
+		if !chain.Succeed((&USDXRaw{contract}).Transfer(accts[0].Auth)) {
+			t.Fatal("unable to transfer")
+		}
+		accts[0].Auth.Value = nil
+
+		// rate increased to 150 usd/eth
+		if !chain.Succeed(oracleContract.SetLastRound(accts[0].Auth, zero, big.NewInt(150e8), zero, zero, zero)) {
+			t.Fatal("unable to set oracle round")
+		}
+
+		oldBal, err := contract.BalanceOf(&bind.CallOpts{}, accts[0].Addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !chain.Succeed(contract.CollectAppreciation(accts[0].Auth, bigint(25, usdx))) {
+			t.Fatal("unable to collect appreciation")
+		}
+
+		if newBal, err := contract.BalanceOf(&bind.CallOpts{}, accts[0].Addr); err != nil {
+			t.Fatal(err)
+		} else if want := oldBal.Add(oldBal, bigint(25, usdx)); newBal.Cmp(want) != 0 {
+			t.Fatalf("want usdx balance: %v, got: %v", want, newBal)
+		}
+
+		// redeem everything to reset
+		if !chain.Succeed(contract.Redeem(accts[0].Auth, zero)) {
+			t.Fatal("unable to redeem")
+		}
+	})
+
+	tests := []struct {
+		prices  []int64
+		expAppr int64
+	}{
+		{[]int64{100}, 0},
+		{[]int64{100, 90}, 0},
+		{[]int64{100, 110}, 10},
+		{[]int64{100, 90, 150}, 110},
+		{[]int64{100, 110, 150}, 90},
+		{[]int64{100, 90, 50}, 0},
+		{[]int64{100, 110, 90, 150}, 150},
+		// The following case is interesting.  If the 100 and 150
+		// deposits were done via 2 separate accounts, the 100 account
+		// deposit would be able to collect 20usdx of appreciation if
+		// price rises to 120, and the 150 deposit would be 30usdx
+		// underwater. Combining the 2 transactions into a single
+		// transaction averages the basis, such that 2 eth have been
+		// deposited at an average cost of 125usd/eth.  This might not
+		// be a tradeoff the depositor is willing to make, but the
+		// mitigation against this would add too much complexity.
+		{[]int64{100, 150, 120}, 0},
+	}
+
+	for i, test := range tests {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			// Mint 1 eth at each price
+			for _, price := range test.prices {
+				// set oracle to the price
+				if !chain.Succeed(oracleContract.SetLastRound(accts[0].Auth, zero, bigint(price, rate), zero, zero, zero)) {
+					t.Fatal("unable to set oracle round")
+				}
+
+				accts[0].Auth.Value = big.NewInt(params.Ether)
+				// mint 1 eth
+				if !chain.Succeed((&USDXRaw{contract}).Transfer(accts[0].Auth)) {
+					t.Fatal("unable to transfer")
+				}
+				accts[0].Auth.Value = nil
+			}
+
+			// call appreciation, ensure it's expected
+			appr, err := contract.Appreciation(&bind.CallOpts{}, accts[0].Addr)
+			if err != nil {
+				t.Fatal(err)
+			} else if want := bigint(test.expAppr, usdx); appr.Cmp(want) != 0 {
+				t.Fatalf("want appreciation: %v, got: %v", want, appr)
+			}
+
+			oldBal, err := contract.BalanceOf(&bind.CallOpts{}, accts[0].Addr)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if !chain.Succeed(contract.CollectAppreciation(accts[0].Auth, zero)) {
+				t.Fatal("unable to collect appreciation")
+			}
+
+			if newBal, err := contract.BalanceOf(&bind.CallOpts{}, accts[0].Addr); err != nil {
+				t.Fatal(err)
+			} else if want := oldBal.Add(oldBal, bigint(test.expAppr, usdx)); newBal.Cmp(want) != 0 {
+				t.Fatalf("want usdx balance: %v, got: %v", want, newBal)
+			}
+
+			// redeem everything to reset
+			if !chain.Succeed(contract.Redeem(accts[0].Auth, zero)) {
+				t.Fatal("unable to redeem")
+			}
+		})
+	}
+}
+
+func TestSetFeed(t *testing.T) {
 	// TODO:
-	// test various permutations of "receive" price going up/down
-	// both appreciation and collectAppreciation is calculated properly
-	// collectAppreciation called twice with same rate returns 0 2nd time
-	// negative appreciation can't be collected
-	// collect limit is respected
+	// ensure only owner
+	// ensure revert if decimals don't match up
+}
+
+func TestTransferAcct(t *testing.T) {
+	// TODO:
+	// ensure only acct owner can transfer
 }
 
 func TestOwner(t *testing.T) {

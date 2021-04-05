@@ -4,6 +4,7 @@ pragma solidity ^0.8.2;
 import "./chainlink/evm-contracts/src/v0.7/interfaces/AggregatorV3Interface.sol";
 import "./openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 import "./openzeppelin-contracts/contracts/access/Ownable.sol";
+/* TODO: Do these need to be imported?  Can only the needed functions be included? */
 import "./openzeppelin-contracts/contracts/utils/math/SafeMath.sol";
 import "./openzeppelin-contracts/contracts/utils/math/SafeCast.sol";
 
@@ -20,6 +21,8 @@ import "./openzeppelin-contracts/contracts/utils/math/SafeCast.sol";
  *   - Eth sent to the USDX contract is minted into USDX at the current
  *     Eth/USD exchange rate.
  *
+ *   TODO: ADD MORE THINGS HERE!
+ *
  *   Note: Owner is able to set the Eth/USD oracle.
  */
 contract USDX is ERC20, Ownable {
@@ -31,6 +34,7 @@ contract USDX is ERC20, Ownable {
 	AggregatorV3Interface public ethUsdPriceFeed;
 	uint8 public feedDecs;
 
+	/* TODO: Consider better var names.  Deposited? */
 	struct account {
 		uint256 locked;
 		uint256 mint;
@@ -48,13 +52,9 @@ contract USDX is ERC20, Ownable {
 		ethUsdPriceFeed = newFeed;
 	}
 
-	/* TODO: Make this external?  Is there a gas cost? */
-	function transferAcct(address _to) public {
-		/* TODO:  */
-	}
-
-	// Received eth is minted into USDX at the current ETH/USD
-	// exchange rate.
+	// Received eth is minted into usdx at the current ETH/USD
+	// exchange rate. Note: msg.sender must be payable to allow
+	// redemption of deposited eth.
 	receive() external payable {
 		(,int256 rate,,,) = ethUsdPriceFeed.latestRoundData();
 		uint256 toMint = weiToUSDX(msg.value, rate);
@@ -64,8 +64,18 @@ contract USDX is ERC20, Ownable {
 		_mint(msg.sender, toMint);
 	}
 
-
-	// Redeems USDX back into eth.  Amount of eth received is based on
+	// Redeems usdx back into eth.  This method should only be called
+	// by sender's who have previously directly sent eth into this
+	// contract to mint usdx.  The amount of eth redeemed is capped to
+	// the amount of eth msg.sender has previously sent.  The amount
+	// of eth redeemed is independent of the current ETH/USD price;
+	// it's based purely on the ratio of previously sent eth and
+	// minted usdx (ie: if 1 eth was previously received by this
+	// contract to mint 1000usdx, 500 usdx is able to be redeemed for
+	// .5 eth).  If _amount is 0, msg.sender's full usdx balance will
+	// be used to redeem eth.  Otherwise, a defined _amount of usdx is
+	// used to redeem into eth.
+	/* TODO: Consider "unlock"? function name? */
 	function redeem(uint256 _amount) public returns (uint256) {
 		account storage acct = accounts[msg.sender];
 		require(acct.locked > 0, "nothing to redeem");
@@ -90,6 +100,12 @@ contract USDX is ERC20, Ownable {
 		return _amount;
 	}
 
+	// Appreciation occurs when previously locked eth appreciates in
+	// usd price. When this occurs, the amount of appreciation can be
+	// collected as USDX, up to _limit.  A _limit of 0 collects all
+	// available appreciation. To redeem the locked eth, both the
+	// principle usdx mint and any collected appreciation must be
+	// returned.
 	function collectAppreciation(uint256 _limit) public returns (uint256) {
 		account storage acct = accounts[msg.sender];
 		(bool ok, uint256 appr) = acctAppreciation(acct);
@@ -104,16 +120,22 @@ contract USDX is ERC20, Ownable {
 		return appr;
 	}
 
-	function appreciation() public view returns (uint256) {
-		account storage acct = accounts[msg.sender];
+	/* TODO: Make this external?  Is there a gas cost? */
+	function transferAcct(address _to) public {
+		/* TODO:  */
+	}
+
+	// Returns the amount of accrued appreciation for _account.
+	function appreciation(address _account) public view returns (uint256) {
+		account storage acct = accounts[_account];
 		(, uint256 appr) = acctAppreciation(acct);
 		return appr;
 	}
 
-	function acctAppreciation(account storage acct) private view returns (bool, uint256) {
+	function acctAppreciation(account storage _acct) private view returns (bool, uint256) {
 		(,int256 rate,,,) = ethUsdPriceFeed.latestRoundData();
-		uint256 lockedVal = weiToUSDX(acct.locked, rate);
-		return SafeMath.trySub(lockedVal, acct.mint);
+		uint256 lockedVal = weiToUSDX(_acct.locked, rate);
+		return SafeMath.trySub(lockedVal, _acct.mint);
 	}
 
 	function weiToUSDX(uint256 _wei, int256 _rate) private view returns (uint256) {
