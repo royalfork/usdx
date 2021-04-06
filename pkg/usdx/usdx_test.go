@@ -638,8 +638,89 @@ func TestSetFeed(t *testing.T) {
 }
 
 func TestTransferAcct(t *testing.T) {
-	// TODO:
-	// ensure only acct owner can transfer
+	chain, accts := soltest.New()
+
+	oracleAddr, _, oracleContract, err := DeployMockOracle(accts[0].Auth, chain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain.Commit()
+
+	_, _, contract, err := DeployUSDX(accts[0].Auth, chain, oracleAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain.Commit()
+
+	// set 1000usd/eth rate in oracle
+	mint := bigint(1000, rate)
+	if !chain.Succeed(oracleContract.SetLastRound(accts[0].Auth, zero, mint, zero, zero, zero)) {
+		t.Fatalf("unable to set oracle round: rate=%v", rate)
+	}
+
+	t.Run("transferToExisting", func(t *testing.T) {
+		// acct1 mints 1 eth
+		accts[1].Auth.Value = bigint(1, eth)
+		if !chain.Succeed((&USDXRaw{contract}).Transfer(accts[1].Auth)) {
+			t.Fatal("unable to transfer")
+		}
+		accts[1].Auth.Value = nil
+
+		// acct2 mints 1 eth
+		accts[2].Auth.Value = bigint(1, eth)
+		if !chain.Succeed((&USDXRaw{contract}).Transfer(accts[2].Auth)) {
+			t.Fatal("unable to transfer")
+		}
+		accts[2].Auth.Value = nil
+
+		// acct1 can't send to acct2
+		if chain.Succeed(contract.TransferAcct(accts[1].Auth, accts[2].Addr)) {
+			t.Fatal("shouldn't transfer to account with existing balance")
+		}
+
+		// acct1 redeems
+		if !chain.Succeed(contract.Redeem(accts[1].Auth, zero)) {
+			t.Fatal("redeem failed")
+		}
+
+		// acct2 redeems
+		if !chain.Succeed(contract.Redeem(accts[2].Auth, zero)) {
+			t.Fatal("redeem failed")
+		}
+	})
+
+	t.Run("success", func(t *testing.T) {
+		// acct1 mints 1 eth
+		accts[1].Auth.Value = bigint(1, eth)
+		if !chain.Succeed((&USDXRaw{contract}).Transfer(accts[1].Auth)) {
+			t.Fatal("unable to transfer")
+		}
+		accts[1].Auth.Value = nil
+
+		// transfer account
+		if !chain.Succeed(contract.TransferAcct(accts[1].Auth, accts[2].Addr)) {
+			t.Fatal("account transfer failed")
+		}
+
+		// accounts have successfully changed
+		if acct, err := contract.Accounts(&bind.CallOpts{}, accts[1].Addr); err != nil {
+			t.Fatal("unable to view account")
+		} else if acct.Locked.Cmp(zero) != 0 {
+			t.Fatalf("want acct locked: %v, got: %v", zero, acct.Locked)
+		} else if acct.Mint.Cmp(zero) != 0 {
+			t.Fatalf("want acct mint: %v, got: %v", zero, acct.Mint)
+		}
+
+		if acct, err := contract.Accounts(&bind.CallOpts{}, accts[2].Addr); err != nil {
+			t.Fatal("unable to view account")
+		} else if wantLock := bigint(1, eth); acct.Locked.Cmp(wantLock) != 0 {
+			t.Fatalf("want acct locked: %v, got: %v", wantLock, acct.Locked)
+		} else if wantMint := bigint(1000, usdx); acct.Mint.Cmp(wantMint) != 0 {
+			t.Fatalf("want acct mint: %v, got: %v", wantMint, acct.Mint)
+		}
+
+		// usdx balance doesn't change
+	})
 }
 
 func TestOwner(t *testing.T) {

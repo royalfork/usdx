@@ -120,9 +120,13 @@ contract USDX is ERC20, Ownable {
 		return appr;
 	}
 
-	/* TODO: Make this external?  Is there a gas cost? */
+	// transferAcct will transfer the sender's locked eth to _to.  It
+	// does not transfer any usdx balance.  _to must not already have
+	// a usdx account.
 	function transferAcct(address _to) public {
-		/* TODO:  */
+		require(accounts[_to].locked == 0);
+		accounts[_to] = accounts[msg.sender];
+		delete accounts[msg.sender];
 	}
 
 	// Returns the amount of accrued appreciation for _account.
