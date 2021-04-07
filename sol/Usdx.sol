@@ -27,6 +27,7 @@ contract USDX is ERC20, Ownable {
 	using SafeMath for uint256;
 	using SafeCast for int256;
 	uint8 constant FEED_DECS = 8;
+	uint256 constant FEED_EXPIRE_TIME = 172800; // 2 days in seconds
 	// ETH/USD exchange rate feed.
 	AggregatorV3Interface public ethUsdPriceFeed;
 
@@ -37,12 +38,19 @@ contract USDX is ERC20, Ownable {
 	function setFeed(address _newFeed) public onlyOwner {
 		AggregatorV3Interface newFeed = AggregatorV3Interface(_newFeed);
 		require(newFeed.decimals() == FEED_DECS);
+
+		(,,,,uint80 answeredInRound) = newFeed.latestRoundData();
+		(,,,uint256 updatedAt,) = newFeed.getRoundData(answeredInRound);
+		uint256 difference = uint256(block.timestamp).sub(updatedAt);
+		require(difference < FEED_EXPIRE_TIME, "Price has been updated in last 2 days, unable to set feed.");
+
 		ethUsdPriceFeed = newFeed;
 	}
 
 	receive() external payable {
-		(,int256 rate,,,) = ethUsdPriceFeed.latestRoundData();
+		(uint80 roundId,int256 rate,,,uint80 answeredInRound) = ethUsdPriceFeed.latestRoundData();
 		uint256 usd = msg.value.mul(rate.toUint256()).div(10**FEED_DECS); //latestRoundData uses 8 decimals
+		require(roundId == answeredInRound, "Current price is not from the latest round.");
 		_mint(_msgSender(), usd);
 	}
 }

@@ -285,4 +285,13 @@ func TestUsdx(t *testing.T) {
 			t.Fatalf("after tx, want acct2 bal: %v, got: %v", txnAmount, bal)
 		}
 	})
+
+	t.Run("shouldRequireUpdatedPrice", func(t *testing.T) {
+		outdatedOracle := common.HexToAddress("0x9326BFA02ADD2366b30bacB125260Af641031331")
+
+		if chain.Succeed(contract.SetFeed(accts[0].Auth, outdatedOracle)) {
+			t.Fatal("feed set to outdated address")
+		}
+
+	})
 }
