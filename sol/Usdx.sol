@@ -29,11 +29,10 @@ contract USDX is ERC20, Ownable {
 	using SafeCast for int256;
 	uint8 constant FEED_DECS = 8;
 	AggregatorV3Interface public usdPriceFeed;
-	uint8 public feedDecs;
 
 	struct account {
-		uint256 locked;
-		uint256 mint;
+		uint256 locked; // eth
+		uint256 mint;   // usdx
 	}
 	mapping (address => account) public accounts;
 
@@ -120,6 +119,7 @@ contract USDX is ERC20, Ownable {
 	// does not transfer any usdx balance.  _to must not already have
 	// a usdx account.
 	function transferAcct(address _to) public {
+		require(accounts[msg.sender].locked != 0);
 		require(accounts[_to].locked == 0);
 		accounts[_to] = accounts[msg.sender];
 		delete accounts[msg.sender];

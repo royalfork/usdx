@@ -593,7 +593,7 @@ func TestSetFeed(t *testing.T) {
 	chain.Commit()
 
 	t.Run("constructorSetsPriceFeed", func(t *testing.T) {
-		priceFeed, err := contract.EthUsdPriceFeed(&bind.CallOpts{})
+		priceFeed, err := contract.UsdPriceFeed(&bind.CallOpts{})
 		if err != nil {
 			t.Errorf("uexpected err reading ethUsdPriceFeed: %v", err)
 		}
@@ -624,7 +624,7 @@ func TestSetFeed(t *testing.T) {
 			t.Error("owner should setFeed")
 		}
 
-		if feed, err := contract.EthUsdPriceFeed(&bind.CallOpts{}); err != nil {
+		if feed, err := contract.UsdPriceFeed(&bind.CallOpts{}); err != nil {
 			t.Fatal("unable to get feed")
 		} else if feed != newOracle {
 			t.Errorf("want feed: %s, got: %s", newOracle, feed)
