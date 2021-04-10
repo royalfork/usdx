@@ -36,6 +36,8 @@ contract USDX is ERC20, Ownable {
 	}
 	mapping (address => account) public accounts;
 
+	event Mint(address indexed to, int256 rate, uint256 lock, uint256 mint);
+
 	constructor (address _priceFeed) ERC20("USDX Stablecoin", "USDX") {
 		setFeed(_priceFeed);
 	}
@@ -48,8 +50,8 @@ contract USDX is ERC20, Ownable {
 	}
 
 	// Received eth is minted into usdx at the current eth/usd
-	// exchange rate.
-	// Note: msg.sender must be payable to allow redemption of
+	// exchange rate, and locked in sender's account.
+	// Note: msg.sender must be payable to allow unlocked of
 	// deposited eth.
 	receive() external payable {
 		(,int256 rate,,,) = usdPriceFeed.latestRoundData();
@@ -58,42 +60,42 @@ contract USDX is ERC20, Ownable {
 		acct.locked += msg.value;
 		acct.mint += toMint;
 		_mint(msg.sender, toMint);
+		emit Mint(msg.sender, rate, msg.value, toMint);
 	}
 
-	// Redeems usdx back into eth.  This method can only be called by
+	// Unlocks _usdx amount of eth.  This method can only be called by
 	// senders who have previously directly sent eth into this
-	// contract.  The amount of eth redeemed is capped to the amount
+	// contract.  The amount of eth unlocked is capped to the amount
 	// of eth the sender has previously sent.  The amount of eth
-	// redeemed is unrelated to the current ETH/USD price; it's based
+	// unlocked is unrelated to the current ETH/USD price; it's based
 	// purely on the ratio of previously sent eth and previously
 	// minted usdx (ie: if 1 eth was previously received by this
-	// contract to mint 1000usdx, 500 usdx is able to be redeemed for
+	// contract to mint 1000usdx, 500 usdx is able to be unlocked for
 	// .5 eth regardless of whether usd/eth price has decreased to
-	// 800usd/eth).  If _amount is 0, msg.sender's full usdx balance
-	// will be used to redeem eth.  Otherwise, _amount is the maximum
-	// amount of usdx used to redeem into eth.
-	function redeem(uint256 _amount) public returns (uint256) {
+	// 800usd/eth).  If _usdx is 0, msg.sender's full usdx balance
+	// will be used to unlock eth.
+	function unlock(uint256 _usdx) public returns (uint256) {
 		account storage acct = accounts[msg.sender];
 		require(acct.locked > 0, "nothing to redeem");
-		if (_amount == 0) {
-			_amount = acct.mint;
+		if (_usdx == 0) {
+			_usdx = acct.mint;
 		} else {
-			_amount = min(_amount, acct.mint);
+			_usdx = min(_usdx, acct.mint);
 		}
 
-		_amount = min(_amount, balanceOf(msg.sender));
-		require(_amount > 0, "no usdx balance");
-		_burn(msg.sender, _amount);
+		_usdx = min(_usdx, balanceOf(msg.sender));
+		require(_usdx > 0, "no usdx balance");
+		_burn(msg.sender, _usdx);
 
-		uint256 unlock = acct.locked.mul(_amount).div(acct.mint);
-		if (_amount == acct.mint) {
+		uint256 unlockAmt = acct.locked.mul(_usdx).div(acct.mint);
+		if (_usdx == acct.mint) {
 			delete accounts[msg.sender];
 		} else {
-			acct.mint -= _amount;
-			acct.locked -= unlock;
+			acct.mint -= _usdx;
+			acct.locked -= unlockAmt;
 		}
-		payable(msg.sender).transfer(unlock);
-		return _amount;
+		payable(msg.sender).transfer(unlockAmt);
+		return _usdx;
 	}
 
 	// Appreciation occurs when previously locked eth appreciates in
@@ -103,7 +105,7 @@ contract USDX is ERC20, Ownable {
 	// mint and any collected appreciation must be returned.
 	function collectAppreciation(uint256 _limit) public returns (uint256) {
 		account storage acct = accounts[msg.sender];
-		(bool ok, uint256 appr) = acctAppreciation(acct);
+		(bool ok, uint256 appr, int256 rate) = acctAppreciation(acct);
 		if (!ok) {
 			return 0;
 		}
@@ -112,6 +114,7 @@ contract USDX is ERC20, Ownable {
 		}
 		acct.mint += appr;
 		_mint(msg.sender, appr);
+		emit Mint(msg.sender, rate, 0, appr);
 		return appr;
 	}
 
@@ -128,14 +131,15 @@ contract USDX is ERC20, Ownable {
 	// Returns the amount of accrued appreciation for _account.
 	function appreciation(address _account) public view returns (uint256) {
 		account storage acct = accounts[_account];
-		(, uint256 appr) = acctAppreciation(acct);
+		(, uint256 appr,) = acctAppreciation(acct);
 		return appr;
 	}
 
-	function acctAppreciation(account storage _acct) private view returns (bool, uint256) {
+	function acctAppreciation(account storage _acct) private view returns (bool, uint256, int256) {
 		(,int256 rate,,,) = usdPriceFeed.latestRoundData();
 		uint256 lockedVal = weiToUSDX(_acct.locked, rate);
-		return SafeMath.trySub(lockedVal, _acct.mint);
+		(bool ok, uint256 diff) = SafeMath.trySub(lockedVal, _acct.mint);
+		return (ok, diff, rate);
 	}
 
 	function weiToUSDX(uint256 _wei, int256 _rate) private pure returns (uint256) {

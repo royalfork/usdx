@@ -126,7 +126,7 @@ func TestReceive(t *testing.T) {
 	})
 }
 
-func TestRedeem(t *testing.T) {
+func TestUnlock(t *testing.T) {
 	chain, accts := soltest.New()
 
 	oracleAddr, _, oracleContract, err := DeployMockOracle(accts[0].Auth, chain)
@@ -167,7 +167,7 @@ func TestRedeem(t *testing.T) {
 
 		return curBal, func() {
 			// redeem full balance
-			if !chain.Succeed(contract.Redeem(acct.Auth, zero)) {
+			if !chain.Succeed(contract.Unlock(acct.Auth, zero)) {
 				t.Fatal("unable to redeem full balance")
 			}
 		}
@@ -177,7 +177,7 @@ func TestRedeem(t *testing.T) {
 	t.Run("all", func(t *testing.T) {
 		oldBal, _ := setup(t, accts[1])
 
-		if !chain.Succeed(contract.Redeem(accts[1].Auth, zero)) {
+		if !chain.Succeed(contract.Unlock(accts[1].Auth, zero)) {
 			t.Fatal("unable to redeem")
 		}
 
@@ -194,7 +194,7 @@ func TestRedeem(t *testing.T) {
 			t.Fatal("want 0 balance of usdx after full redeem")
 		}
 
-		if chain.Succeed(contract.Redeem(accts[1].Auth, zero)) {
+		if chain.Succeed(contract.Unlock(accts[1].Auth, zero)) {
 			t.Fatal("redeem with 0 balance should revert")
 		}
 	})
@@ -205,7 +205,7 @@ func TestRedeem(t *testing.T) {
 		defer done()
 
 		// redeem 500usdx
-		if !chain.Succeed(contract.Redeem(accts[1].Auth, bigint(500, usdx))) {
+		if !chain.Succeed(contract.Unlock(accts[1].Auth, bigint(500, usdx))) {
 			t.Fatal("unable to redeem")
 		}
 
@@ -228,7 +228,7 @@ func TestRedeem(t *testing.T) {
 		oldBal, _ := setup(t, accts[1])
 
 		// redeem 5000usdx
-		if !chain.Succeed(contract.Redeem(accts[1].Auth, bigint(5000, usdx))) {
+		if !chain.Succeed(contract.Unlock(accts[1].Auth, bigint(5000, usdx))) {
 			t.Fatal("unable to redeem")
 		}
 
@@ -256,7 +256,7 @@ func TestRedeem(t *testing.T) {
 		}
 
 		// redeem with no limit
-		if !chain.Succeed(contract.Redeem(accts[1].Auth, zero)) {
+		if !chain.Succeed(contract.Unlock(accts[1].Auth, zero)) {
 			t.Fatal("unable to redeem")
 		}
 
@@ -268,7 +268,7 @@ func TestRedeem(t *testing.T) {
 		}
 
 		// redeeming should fail, no usdx balance
-		if chain.Succeed(contract.Redeem(accts[1].Auth, zero)) {
+		if chain.Succeed(contract.Unlock(accts[1].Auth, zero)) {
 			t.Fatal("redeeming with no usdx balance should fail")
 		}
 
@@ -291,7 +291,7 @@ func TestRedeem(t *testing.T) {
 		}
 
 		// redeem with no limit
-		if !chain.Succeed(contract.Redeem(accts[1].Auth, zero)) {
+		if !chain.Succeed(contract.Unlock(accts[1].Auth, zero)) {
 			t.Fatal("unable to redeem")
 		}
 
@@ -309,7 +309,7 @@ func TestRedeem(t *testing.T) {
 			t.Fatalf("want usdx balance: %v, got: %v", want, uBal)
 		}
 
-		if chain.Succeed(contract.Redeem(accts[1].Auth, zero)) {
+		if chain.Succeed(contract.Unlock(accts[1].Auth, zero)) {
 			t.Fatal("redeem with no locked eth should revert")
 		}
 
@@ -319,7 +319,7 @@ func TestRedeem(t *testing.T) {
 	})
 
 	// mint, redeem, mint, redeem suceeds
-	t.Run("doubleRedeem", func(t *testing.T) {
+	t.Run("doubleUnlock", func(t *testing.T) {
 		_, redeem := setup(t, accts[1])
 		redeem()
 		_, redeem = setup(t, accts[1])
@@ -423,7 +423,7 @@ func TestAppreciation(t *testing.T) {
 		}
 
 		// redeem everything to reset
-		if !chain.Succeed(contract.Redeem(accts[0].Auth, zero)) {
+		if !chain.Succeed(contract.Unlock(accts[0].Auth, zero)) {
 			t.Fatal("unable to redeem")
 		}
 	})
@@ -462,7 +462,7 @@ func TestAppreciation(t *testing.T) {
 		}
 
 		// redeem everything to reset
-		if !chain.Succeed(contract.Redeem(accts[0].Auth, zero)) {
+		if !chain.Succeed(contract.Unlock(accts[0].Auth, zero)) {
 			t.Fatal("unable to redeem")
 		}
 	})
@@ -501,7 +501,7 @@ func TestAppreciation(t *testing.T) {
 		}
 
 		// redeem everything to reset
-		if !chain.Succeed(contract.Redeem(accts[0].Auth, zero)) {
+		if !chain.Succeed(contract.Unlock(accts[0].Auth, zero)) {
 			t.Fatal("unable to redeem")
 		}
 	})
@@ -570,7 +570,7 @@ func TestAppreciation(t *testing.T) {
 			}
 
 			// redeem everything to reset
-			if !chain.Succeed(contract.Redeem(accts[0].Auth, zero)) {
+			if !chain.Succeed(contract.Unlock(accts[0].Auth, zero)) {
 				t.Fatal("unable to redeem")
 			}
 		})
@@ -679,12 +679,12 @@ func TestTransferAcct(t *testing.T) {
 		}
 
 		// acct1 redeems
-		if !chain.Succeed(contract.Redeem(accts[1].Auth, zero)) {
+		if !chain.Succeed(contract.Unlock(accts[1].Auth, zero)) {
 			t.Fatal("redeem failed")
 		}
 
 		// acct2 redeems
-		if !chain.Succeed(contract.Redeem(accts[2].Auth, zero)) {
+		if !chain.Succeed(contract.Unlock(accts[2].Auth, zero)) {
 			t.Fatal("redeem failed")
 		}
 	})
@@ -882,7 +882,7 @@ func TestERC20(t *testing.T) {
 	checkTxEvt(accts[2].Addr, accts[1].Addr, txnAmount)
 
 	// acct1 redeems
-	if !chain.Succeed(contract.Redeem(accts[1].Auth, zero)) {
+	if !chain.Succeed(contract.Unlock(accts[1].Auth, zero)) {
 		t.Fatal("unable to redeem")
 	}
 
