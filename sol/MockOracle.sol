@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.2;
 
-import "./chainlink/evm-contracts/src/v0.6/interfaces/AggregatorV3Interface.sol";
+import "./chainlink/evm-contracts/src/v0.7/interfaces/AggregatorV3Interface.sol";
 
 contract MockOracle is AggregatorV3Interface {
 	struct RoundData {
@@ -23,11 +23,6 @@ contract MockOracle is AggregatorV3Interface {
 		accessDenied = !_granted;
 	}
 
-	// TODO figure out what decimals is for live ETH/USD oracle, and
-	// test against that.  ALSO, test against changes to make sure
-	// math is ok.
-	// TODO in tests, use theoretical and live data.
-
 	function setLastRound(
 		uint80 _roundId,
 		int256 _answer,
@@ -42,7 +37,6 @@ contract MockOracle is AggregatorV3Interface {
 		lastRound.answeredInRound = _answeredInRound;
 	}
 
-	
 	function latestRoundData()
 		public
 		view
@@ -84,7 +78,7 @@ contract MockOracle is AggregatorV3Interface {
 		_;
 	}
 
-	constructor () public { 
+	constructor () public {
 		decimals = 8;
 	}
 }
