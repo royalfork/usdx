@@ -36,8 +36,6 @@ contract USDX is ERC20, Ownable {
 	}
 	mapping (address => account) public accounts;
 
-	event Mint(address indexed to, int256 rate, uint256 lock, uint256 mint);
-
 	constructor (address _priceFeed) ERC20("USDX Stablecoin", "USDX") {
 		setFeed(_priceFeed);
 	}
@@ -60,7 +58,6 @@ contract USDX is ERC20, Ownable {
 		acct.locked += msg.value;
 		acct.mint += toMint;
 		_mint(msg.sender, toMint);
-		emit Mint(msg.sender, rate, msg.value, toMint);
 	}
 
 	// Unlocks _usdx amount of eth.  This method can only be called by
@@ -105,7 +102,7 @@ contract USDX is ERC20, Ownable {
 	// mint and any collected appreciation must be returned.
 	function collectAppreciation(uint256 _limit) public returns (uint256) {
 		account storage acct = accounts[msg.sender];
-		(bool ok, uint256 appr, int256 rate) = acctAppreciation(acct);
+		(bool ok, uint256 appr) = acctAppreciation(acct);
 		if (!ok) {
 			return 0;
 		}
@@ -114,7 +111,6 @@ contract USDX is ERC20, Ownable {
 		}
 		acct.mint += appr;
 		_mint(msg.sender, appr);
-		emit Mint(msg.sender, rate, 0, appr);
 		return appr;
 	}
 
@@ -131,15 +127,14 @@ contract USDX is ERC20, Ownable {
 	// Returns the amount of accrued appreciation for _account.
 	function appreciation(address _account) public view returns (uint256) {
 		account storage acct = accounts[_account];
-		(, uint256 appr,) = acctAppreciation(acct);
+		(, uint256 appr) = acctAppreciation(acct);
 		return appr;
 	}
 
-	function acctAppreciation(account storage _acct) private view returns (bool, uint256, int256) {
+	function acctAppreciation(account storage _acct) private view returns (bool, uint256) {
 		(,int256 rate,,,) = usdPriceFeed.latestRoundData();
 		uint256 lockedVal = weiToUSDX(_acct.locked, rate);
-		(bool ok, uint256 diff) = SafeMath.trySub(lockedVal, _acct.mint);
-		return (ok, diff, rate);
+		return SafeMath.trySub(lockedVal, _acct.mint);
 	}
 
 	function weiToUSDX(uint256 _wei, int256 _rate) private pure returns (uint256) {
