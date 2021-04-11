@@ -17,7 +17,7 @@ import "./openzeppelin-contracts/contracts/utils/math/SafeCast.sol";
  *    \______/  \______/ \_______/ \__|  \__|
  *
  *   USDX is a USD based stablecoin with the following properties:
- *   - Eth sent to the usdx contract is locked, and USDX is minted
+ *   - Eth sent to the USDX contract is locked, and USDX is minted
  *     into the sender's account at the current eth/usd exchange rate.
  *   - Locked eth can be redeemed by the original sender by burning USDX
  *     at the originally minted price.
@@ -29,6 +29,7 @@ contract USDX is ERC20, Ownable {
 	using SafeCast for int256;
 	uint8 constant FEED_DECS = 8;
 	AggregatorV3Interface public usdPriceFeed;
+	uint80 public priceStalenessThreshold = 0;
 
 	struct account {
 		uint256 locked; // eth
@@ -47,12 +48,16 @@ contract USDX is ERC20, Ownable {
 		usdPriceFeed = newFeed;
 	}
 
+	function setStalenessThreshold(uint80 _newThreshold) public onlyOwner {
+		priceStalenessThreshold = _newThreshold;
+	}
+
 	// Received eth is minted into usdx at the current eth/usd
 	// exchange rate, and locked in sender's account.
 	// Note: msg.sender must be payable to allow unlocked of
 	// deposited eth.
 	receive() external payable {
-		(,int256 rate,,,) = usdPriceFeed.latestRoundData();
+		int256 rate = rate();
 		uint256 toMint = weiToUSDX(msg.value, rate);
 		account storage acct = accounts[msg.sender];
 		acct.locked += msg.value;
@@ -132,9 +137,15 @@ contract USDX is ERC20, Ownable {
 	}
 
 	function acctAppreciation(account storage _acct) private view returns (bool, uint256) {
-		(,int256 rate,,,) = usdPriceFeed.latestRoundData();
+		int256 rate = rate();
 		uint256 lockedVal = weiToUSDX(_acct.locked, rate);
 		return SafeMath.trySub(lockedVal, _acct.mint);
+	}
+
+	function rate() private view returns (int256) {
+		(uint80 roundId,int256 rate,,,uint80 answeredInRound) = usdPriceFeed.latestRoundData();
+		require(roundId - answeredInRound <= priceStalenessThreshold, "stale price feed");
+		return rate;
 	}
 
 	function weiToUSDX(uint256 _wei, int256 _rate) private pure returns (uint256) {

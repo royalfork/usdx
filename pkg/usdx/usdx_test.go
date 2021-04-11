@@ -637,6 +637,100 @@ func TestSetFeed(t *testing.T) {
 	})
 }
 
+func TestThreshold(t *testing.T) {
+	chain, accts := soltest.New()
+
+	oracleAddr, _, oracleContract, err := DeployMockOracle(accts[0].Auth, chain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain.Commit()
+
+	_, _, contract, err := DeployUSDX(accts[0].Auth, chain, oracleAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain.Commit()
+
+	tt := big.NewInt(3)
+	t.Run("ownerSets", func(t *testing.T) {
+		if chain.Succeed(contract.SetStalenessThreshold(accts[1].Auth, tt)) {
+			t.Fatal("non-owner shouldn't set threshold")
+		}
+
+		if !chain.Succeed(contract.SetStalenessThreshold(accts[0].Auth, tt)) {
+			t.Fatal("non-owner shouldn't set threshold")
+		}
+	})
+
+	t.Run("receive", func(t *testing.T) {
+		if !chain.Succeed(contract.SetStalenessThreshold(accts[0].Auth, tt)) {
+			t.Fatal("non-owner shouldn't set threshold")
+		}
+
+		// set oracle to stale
+		if !chain.Succeed(oracleContract.SetLastRound(accts[0].Auth, big.NewInt(14), bigint(1000, rate), zero, zero, big.NewInt(10))) {
+			t.Fatalf("unable to set oracle round: rate=%v", rate)
+		}
+
+		// sending eth should fail when oracle is stale
+		accts[1].Auth.Value = big.NewInt(params.Ether)
+		if chain.Succeed((&USDXRaw{contract}).Transfer(accts[1].Auth)) {
+			t.Fatal("transfer should fail when oracle is stale")
+		}
+
+		// set oracle to fresh
+		if !chain.Succeed(oracleContract.SetLastRound(accts[0].Auth, big.NewInt(14), bigint(1000, rate), zero, zero, big.NewInt(11))) {
+			t.Fatalf("unable to set oracle round: rate=%v", rate)
+		}
+
+		// sending eth should succeed when oracle is fresh
+		if !chain.Succeed((&USDXRaw{contract}).Transfer(accts[1].Auth)) {
+			t.Fatal("transfer should succeed when oracle is fresh")
+		}
+
+		accts[1].Auth.Value = nil
+	})
+
+	t.Run("appreciation", func(t *testing.T) {
+		if !chain.Succeed(contract.SetStalenessThreshold(accts[0].Auth, tt)) {
+			t.Fatal("non-owner shouldn't set threshold")
+		}
+
+		// bootstrap acct
+		if !chain.Succeed(oracleContract.SetLastRound(accts[0].Auth, zero, bigint(1000, rate), zero, zero, zero)) {
+			t.Fatalf("unable to set oracle round: rate=%v", rate)
+		}
+
+		// sending eth should fail when oracle is stale
+		accts[2].Auth.Value = big.NewInt(params.Ether)
+		if !chain.Succeed((&USDXRaw{contract}).Transfer(accts[2].Auth)) {
+			t.Fatal("unable to mint usdx")
+		}
+		accts[2].Auth.Value = nil
+
+		// set oracle to appreciate, but stale
+		if !chain.Succeed(oracleContract.SetLastRound(accts[0].Auth, big.NewInt(14), bigint(2000, rate), zero, zero, big.NewInt(10))) {
+			t.Fatalf("unable to set oracle round: rate=%v", rate)
+		}
+
+		// collectingAppreciation should fail when oracle is stale
+		if chain.Succeed(contract.CollectAppreciation(accts[2].Auth, zero)) {
+			t.Fatal("shouldn't collect appreciation on stale oracle")
+		}
+
+		// set oracle to fresh
+		if !chain.Succeed(oracleContract.SetLastRound(accts[0].Auth, big.NewInt(14), bigint(2000, rate), zero, zero, big.NewInt(11))) {
+			t.Fatalf("unable to set oracle round: rate=%v", rate)
+		}
+
+		// collectingAppreciation should succeed when oracle is fresh
+		if !chain.Succeed(contract.CollectAppreciation(accts[2].Auth, zero)) {
+			t.Fatal("collectAppreciation should succeed with fresh oracle")
+		}
+	})
+}
+
 func TestTransferAcct(t *testing.T) {
 	chain, accts := soltest.New()
 
