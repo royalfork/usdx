@@ -57,8 +57,8 @@ contract USDX is ERC20, Ownable {
 	// Note: msg.sender must be payable to allow unlocked of
 	// deposited eth.
 	receive() external payable {
-		int256 rate = rate();
-		uint256 toMint = weiToUSDX(msg.value, rate);
+		int256 xrate = rate();
+		uint256 toMint = weiToUSDX(msg.value, xrate);
 		account storage acct = accounts[msg.sender];
 		acct.locked += msg.value;
 		acct.mint += toMint;
@@ -137,15 +137,15 @@ contract USDX is ERC20, Ownable {
 	}
 
 	function acctAppreciation(account storage _acct) private view returns (bool, uint256) {
-		int256 rate = rate();
-		uint256 lockedVal = weiToUSDX(_acct.locked, rate);
+		int256 xrate = rate();
+		uint256 lockedVal = weiToUSDX(_acct.locked, xrate);
 		return SafeMath.trySub(lockedVal, _acct.mint);
 	}
 
 	function rate() private view returns (int256) {
-		(uint80 roundId,int256 rate,,,uint80 answeredInRound) = usdPriceFeed.latestRoundData();
+		(uint80 roundId,int256 xrate,,,uint80 answeredInRound) = usdPriceFeed.latestRoundData();
 		require(roundId - answeredInRound <= priceStalenessThreshold, "stale price feed");
-		return rate;
+		return xrate;
 	}
 
 	function weiToUSDX(uint256 _wei, int256 _rate) private pure returns (uint256) {
