@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+  <head>
+	<meta charset="UTF-8">
+	<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Ctext%20x='0'%20y='14'%3E$%3C/text%3E%3C/svg%3E" type="image/svg+xml" />
+
+	<title>USDX</title>
+	<style>
+	  html {
+		  height: 100%;
+	  }
+
+	  body {
+		  width: 61.8%;
+		  height: 100%;
+		  margin: 0 auto;
+		  text-align: center;
+		  font-size: 16px;
+		  font-family: mono;
+		  border-left: 1px dashed black;
+		  border-right: 1px dashed black;
+	  }
+
+	  body > * {
+		  margin-bottom: 20px;
+	  }
+
+	  body:last-child {
+		  margin-bottom: 0px;
+	  }
+
+	  h1 {
+		  font-size: 80pt;
+		  font-family: arial;
+		  padding: 25px;
+		  margin: 0;
+	  }
+
+	  ol {
+		  text-align: left;
+		  width: 850px;
+		  margin: 16px auto;
+		  line-height: 22px;
+	  }
+
+	  ul {
+		  columns: 2;
+		  text-align: left;
+		  width: 600px;
+		  margin: 0 auto 20px auto;
+	  }
+
+	  input {
+		  text-align: right;
+	  }
+
+	</style>
+
+	<script>
+	  async function mint(){
+		  var amt = document.getElementById("amount").value;
+		  if (amt == "") {
+		  	  alert("Please enter a valid amount");
+		  	  return;
+		  }
+
+		  if (!window.ethereum) {
+			  alert("Purchasing USDX requires a web3 capable browser")
+			  return
+		  }
+
+		  if (await ethereum.request({ method: "eth_chainId"}) != 0x1) {
+			  alert("Please set your web3 network to Mainnet")
+			  return
+		  }
+
+		  const cents = Math.floor(amt * 100);
+
+		  try {
+			  const accounts = await ethereum.request({ method: 'eth_requestAccounts' }); 
+			  // usd / 10**8 eth
+			  const rate = BigInt(await ethereum.request({
+				  method: "eth_call",
+				  params: [{
+					  to: "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419", // eth-usd.data.eth
+					  data: "0x50d25bcd" // latestAnswer() int256
+				  }]
+			  })); 
+
+			  // wei = amnt USD * (10**8 eth / rate USD) * (10**18 wei / 1 eth)
+			  const wei = (BigInt(cents) * BigInt(10**24)) / rate;
+
+			  const out = await ethereum.request({
+				  method: "eth_sendTransaction",
+				  params: [{
+					  from: accounts[0],
+					  to: "0x88880096756cd77BAc67BbB6859ed2b74B648888",
+					  value: wei.toString(16)
+				  }]
+			  });
+
+			  alert(out);
+		  } catch (e) {
+			  alert(e.message);
+		  }
+	  }
+	</script>
+  </head>
+  <body>
+	<h1>USDX</h1>
+	<div>An eth backed stablecoin that can be explained in only 2 sentences:</div>
+	<ol>
+	  <li>Mint new USDX at the current usd/eth rate by locking eth into the USDX smart contract.</li>
+	  <li>Send the same amount of USDX back to refund your eth.</li>
+	</ol>
+
+	<ul>
+	  <li>No management tokens</li>
+	  <li>No forced liquidations</li>
+	  <li>No censorship</li>
+	  <li>No shady collateral, only eth</li>
+	  <li>Open source, open data</li>
+	  <li>Non-profit</li>
+	</ul>
+
+	$<input id="amount" type="number" step="1" min="0" placeholder="10.00" value="10.00"><input type="button" name="mint" value="MINT" onclick="mint()">
+
+	<div style="margin-top:20px;">
+	  <a href="https://etherscan.io/address/0x88880096756cd77BAc67BbB6859ed2b74B648888">0x88880096756cd77BAc67BbB6859ed2b74B648888</a>
+	</div>
+  </body>
+</html>
